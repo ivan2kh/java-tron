@@ -225,11 +225,11 @@ EnergyFee = EnergyUsed × (1 + EnergyFactor/100) × 420 sun
 ## Book Statistics
 
 **Completed:**
-- Pages: ~53 (Chapters 1-3)
-- Words: ~35,000
-- Code examples: 25+
-- Source references: 150+
-- Formulas verified: 10+
+- Pages: ~133 (Chapters 1-7)
+- Words: ~90,000
+- Code examples: 60+
+- Source references: 350+
+- Formulas verified: 15+
 
 **Target:**
 - Total pages: 350
@@ -418,13 +418,17 @@ For inquiries about the book project, please contact through the java-tron repos
 - Completed Chapter 1: TRON Resource Fundamentals (15 pages)
 - Completed Chapter 2: Resource Calculation Deep Dive (18 pages)
 - Completed Chapter 3: Stake 2.0 Implementation (20 pages)
-- Total: 53 pages, 35,000 words, 25+ code examples
+- Completed Chapter 4: Resource Delegation Mastery (22 pages)
+- Completed Chapter 5: Energy Cost Analysis (22 pages)
+- Completed Chapter 6: Advanced Contract Patterns (20 pages)
+- Completed Chapter 7: Resource Monitoring and Alerting (16 pages)
+- Total: 133 pages, 90,000 words, 60+ code examples
 
-**Next Milestone**: Complete Chapters 4-6 (Delegation & Optimization)
+**Next Milestone**: Complete Chapters 8-12 (Production Systems & Advanced Topics)
 
 ---
 
 **Book Status**: Active Development
-**Completion**: 15% (53 of 350 pages)
+**Completion**: 38% (133 of 350 pages)
 **Quality**: Publication-ready for completed chapters
 **Source Verification**: 100% of claims verified against source code

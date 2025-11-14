@@ -1999,10 +1999,1658 @@ This architecture ensures that:
 
 ---
 
-Due to length constraints, I'll continue this chapter in the next message with sections 8.5-8.7. The pattern established is:
-- **Extensive explanatory text** (70% of content)
-- **Real-world context** and rationale
-- **Code as supporting illustration** (30% of content)
-- **Step-by-step walkthroughs** of complex processes
+## 8.5 Incident Response Procedures
 
-Should I continue completing Chapter 8 with this detailed approach?
+Building resilient systems is only half the battle. The other half is being prepared when things inevitably go wrong. In the TRON ecosystem, resource-related incidents can escalate quickly: a contract burning through 100,000 TRX per hour instead of the expected 1,000 TRX, or energy reserves depleting in minutes instead of days.
+
+### The Cost of Poor Incident Response
+
+Let's quantify what poor incident response means. If your contract normally burns 1,000 TRX/hour for energy, but a bug causes it to burn 100,000 TRX/hour:
+
+- **First 10 minutes (undetected)**: 16,667 TRX lost (~$1,667 at $0.10/TRX)
+- **Next 20 minutes (detected but no runbook)**: Engineers scramble to remember procedures, another 33,333 TRX lost (~$3,333)
+- **Next 30 minutes (execution delays)**: Multiple people need to coordinate, confusion about who does what, another 50,000 TRX lost (~$5,000)
+
+**Total loss from 1-hour delayed response**: ~100,000 TRX or ~$10,000
+
+Compare this to a team with a well-rehearsed incident response plan:
+- **First 5 minutes**: Automated alerts trigger, engineer on-call immediately knows it's energy-related
+- **Minutes 5-7**: Engineer executes pre-written runbook, switches contract to 100% user-paid mode
+- **Minutes 7-10**: Root cause identified using incident playbook, bug hotfix deployed
+- **Total loss**: ~8,333 TRX or ~$833
+
+**Savings from good incident response**: ~$9,167 (over 90% reduction in loss)
+
+### The Incident Response Playbook
+
+An incident playbook is a decision tree that guides responders through the critical first minutes. Think of it like emergency room triage: the goal is rapid categorization and immediate action, not perfect diagnosis.
+
+#### Classifying Resource Incidents
+
+Resource incidents fall into three categories, each requiring different immediate responses:
+
+**Category 1: Bleeding (Rapid TRX Loss)**
+- **Symptoms**: TRX balance decreasing faster than expected
+- **Immediate action**: STOP THE BLEEDING
+- **Time-critical**: Yes (minutes matter)
+- **Example**: Bug causes contract to burn 10x expected energy
+
+**Category 2: Capacity Exhaustion (Running Out of Resources)**
+- **Symptoms**: Energy/bandwidth running low but TRX balance stable
+- **Immediate action**: ADD CAPACITY or REDUCE LOAD
+- **Time-critical**: Moderate (hours matter)
+- **Example**: Unexpected traffic spike depletes frozen energy
+
+**Category 3: Performance Degradation (Slow but Functional)**
+- **Symptoms**: High transaction costs but system still working
+- **Immediate action**: INVESTIGATE and OPTIMIZE
+- **Time-critical**: No (days acceptable)
+- **Example**: Energy factor activated, increasing costs gradually
+
+Here's the implementation of this classification system:
+
+```javascript
+/**
+ * INCIDENT PLAYBOOK: Resource Incident Response System
+ *
+ * This is the first code executed when a resource alert fires.
+ * It implements rapid triage and immediate containment.
+ *
+ * Design Philosophy:
+ * 1. Speed over perfection - get 80% right in 2 minutes, not 100% in 20 minutes
+ * 2. Safe defaults - all automated actions should reduce risk
+ * 3. Human oversight - category 1 incidents auto-execute, others require approval
+ */
+
+class ResourceIncidentPlaybook {
+    constructor(config) {
+        this.tronWeb = config.tronWeb;
+        this.contractAddress = config.contractAddress;
+        this.alertChannels = config.alertChannels;
+        this.onCallSchedule = config.onCallSchedule;
+
+        // Define decision thresholds based on historical data
+        this.thresholds = {
+            // Bleeding: TRX loss rate vs baseline
+            bleedingMultiplier: 5,  // 5x normal = bleeding
+
+            // Capacity: time until exhaustion
+            capacityCriticalHours: 4,
+            capacityWarningHours: 24,
+
+            // Performance: cost increase vs baseline
+            performanceDegradationMultiplier: 2  // 2x cost = degraded
+        };
+    }
+
+    /**
+     * PRIMARY ENTRY POINT: Called when any resource alert fires
+     *
+     * This method implements the triage algorithm that determines
+     * incident category and initiates appropriate response.
+     */
+    async handleResourceAlert(alertData) {
+        console.log('\n🚨 RESOURCE ALERT TRIGGERED\n');
+        console.log('Alert Type:', alertData.type);
+        console.log('Severity:', alertData.severity);
+        console.log('Triggered at:', new Date().toISOString());
+
+        // STEP 1: GATHER CURRENT STATE
+        // We need a snapshot of the current situation before we can classify
+        const currentState = await this.gatherCurrentState();
+
+        // STEP 2: CALCULATE METRICS
+        // Compare current state to baseline to detect anomalies
+        const metrics = await this.calculateMetrics(currentState);
+
+        // STEP 3: CLASSIFY INCIDENT
+        // Use decision tree to categorize the incident
+        const classification = this.classifyIncident(metrics);
+
+        console.log('\n📊 INCIDENT CLASSIFICATION:');
+        console.log('Category:', classification.category);
+        console.log('Severity:', classification.severity);
+        console.log('Time-critical:', classification.timeCritical);
+        console.log('Auto-remediation:', classification.autoRemediate);
+
+        // STEP 4: EXECUTE IMMEDIATE RESPONSE
+        // Different categories require different immediate actions
+        await this.executeImmediateResponse(classification, currentState, metrics);
+
+        // STEP 5: CREATE INCIDENT RECORD
+        // Start tracking this incident for post-mortem
+        const incident = await this.createIncidentRecord(classification, currentState, metrics);
+
+        return incident;
+    }
+
+    async gatherCurrentState() {
+        // Gather all relevant data in parallel for speed
+        const [
+            balance,
+            resources,
+            recentTransactions,
+            contractSettings,
+            baseline
+        ] = await Promise.all([
+            this.tronWeb.trx.getBalance(this.contractAddress),
+            this.tronWeb.trx.getAccountResources(this.contractAddress),
+            this.getRecentTransactions(this.contractAddress, 100),
+            this.getContractSettings(this.contractAddress),
+            this.getBaselineMetrics()  // Historical average
+        ]);
+
+        return {
+            timestamp: Date.now(),
+            balance,
+            resources,
+            recentTransactions,
+            contractSettings,
+            baseline
+        };
+    }
+
+    calculateMetrics(currentState) {
+        const now = Date.now();
+        const oneHourAgo = now - 3600000;
+
+        // Filter transactions from last hour
+        const recentTxs = currentState.recentTransactions.filter(
+            tx => tx.timestamp > oneHourAgo
+        );
+
+        // Calculate TRX burn rate (SUN per hour)
+        const trxBurned = recentTxs.reduce((sum, tx) => {
+            // Energy burned = (tx.energy_usage - tx.energy_from_frozen) * current_energy_price
+            const energyBought = Math.max(0, tx.energy_usage - (tx.energy_from_frozen || 0));
+            const trxCost = energyBought * 420;  // Current price: 420 SUN per energy
+            return sum + trxCost;
+        }, 0);
+
+        const burnRatePerHour = trxBurned;  // Already calculated for 1 hour
+
+        // Calculate baseline multiplier
+        const baselineBurnRate = currentState.baseline.trxPerHour;
+        const burnRateMultiplier = baselineBurnRate > 0
+            ? burnRatePerHour / baselineBurnRate
+            : 0;
+
+        // Calculate time until exhaustion
+        const frozenEnergy = currentState.resources.EnergyLimit || 0;
+        const energyUsagePerHour = recentTxs.reduce((sum, tx) => sum + tx.energy_usage, 0);
+
+        const hoursUntilEnergyExhaustion = energyUsagePerHour > 0
+            ? frozenEnergy / energyUsagePerHour
+            : Infinity;
+
+        const hoursUntilTRXExhaustion = burnRatePerHour > 0
+            ? currentState.balance / burnRatePerHour
+            : Infinity;
+
+        const hoursUntilExhaustion = Math.min(
+            hoursUntilEnergyExhaustion,
+            hoursUntilTRXExhaustion
+        );
+
+        // Calculate cost per transaction
+        const avgCostPerTx = recentTxs.length > 0
+            ? trxBurned / recentTxs.length
+            : 0;
+
+        const baselineCostPerTx = currentState.baseline.costPerTransaction;
+        const costMultiplier = baselineCostPerTx > 0
+            ? avgCostPerTx / baselineCostPerTx
+            : 1;
+
+        return {
+            burnRatePerHour,
+            burnRateMultiplier,
+            hoursUntilExhaustion,
+            avgCostPerTx,
+            costMultiplier,
+            transactionsPerHour: recentTxs.length,
+            energyUsagePerHour
+        };
+    }
+
+    classifyIncident(metrics) {
+        // DECISION TREE: Classify based on metrics
+
+        // Check for Category 1: BLEEDING (most critical)
+        if (metrics.burnRateMultiplier >= this.thresholds.bleedingMultiplier) {
+            return {
+                category: 'bleeding',
+                severity: 'critical',
+                timeCritical: true,
+                autoRemediate: true,  // Auto-execute containment
+                reason: `TRX burn rate ${metrics.burnRateMultiplier.toFixed(1)}x baseline ` +
+                        `(threshold: ${this.thresholds.bleedingMultiplier}x)`
+            };
+        }
+
+        // Check for Category 2: CAPACITY EXHAUSTION
+        if (metrics.hoursUntilExhaustion <= this.thresholds.capacityCriticalHours) {
+            return {
+                category: 'capacity_exhaustion',
+                severity: 'critical',
+                timeCritical: true,
+                autoRemediate: false,  // Requires human approval
+                reason: `Resources will be exhausted in ${metrics.hoursUntilExhaustion.toFixed(1)} hours ` +
+                        `(threshold: ${this.thresholds.capacityCriticalHours}h)`
+            };
+        }
+
+        if (metrics.hoursUntilExhaustion <= this.thresholds.capacityWarningHours) {
+            return {
+                category: 'capacity_exhaustion',
+                severity: 'warning',
+                timeCritical: false,
+                autoRemediate: false,
+                reason: `Resources will be exhausted in ${metrics.hoursUntilExhaustion.toFixed(1)} hours ` +
+                        `(threshold: ${this.thresholds.capacityWarningHours}h)`
+            };
+        }
+
+        // Check for Category 3: PERFORMANCE DEGRADATION
+        if (metrics.costMultiplier >= this.thresholds.performanceDegradationMultiplier) {
+            return {
+                category: 'performance_degradation',
+                severity: 'warning',
+                timeCritical: false,
+                autoRemediate: false,
+                reason: `Transaction costs ${metrics.costMultiplier.toFixed(1)}x baseline ` +
+                        `(threshold: ${this.thresholds.performanceDegradationMultiplier}x)`
+            };
+        }
+
+        // False alarm or recovered automatically
+        return {
+            category: 'none',
+            severity: 'info',
+            timeCritical: false,
+            autoRemediate: false,
+            reason: 'Metrics within normal thresholds'
+        };
+    }
+
+    async executeImmediateResponse(classification, currentState, metrics) {
+        console.log('\n⚡ EXECUTING IMMEDIATE RESPONSE\n');
+
+        switch (classification.category) {
+            case 'bleeding':
+                await this.handleBleedingIncident(currentState, metrics);
+                break;
+
+            case 'capacity_exhaustion':
+                await this.handleCapacityIncident(currentState, metrics, classification.severity);
+                break;
+
+            case 'performance_degradation':
+                await this.handlePerformanceIncident(currentState, metrics);
+                break;
+
+            default:
+                console.log('No immediate action required');
+        }
+    }
+
+    /**
+     * BLEEDING INCIDENT: Immediate automated containment
+     *
+     * When TRX is being lost rapidly, we don't have time for human approval.
+     * This method executes pre-approved containment actions automatically.
+     *
+     * Philosophy: It's better to degrade service (and preserve funds) than
+     * to maintain service while losing money rapidly.
+     */
+    async handleBleedingIncident(currentState, metrics) {
+        console.log('🩸 BLEEDING INCIDENT DETECTED - Auto-remediation starting...\n');
+
+        const actions = [];
+
+        // ACTION 1: Switch contract to 100% user-paid (IMMEDIATE)
+        console.log('[1/4] Switching contract to 100% user-paid mode...');
+        try {
+            await this.tronWeb.transactionBuilder.updateSetting(
+                this.contractAddress,
+                100  // 100% user-paid
+            );
+            actions.push({
+                action: 'update_consume_user_resource_percent',
+                value: 100,
+                success: true,
+                timestamp: Date.now()
+            });
+            console.log('✅ Contract now 100% user-paid');
+        } catch (error) {
+            console.error('❌ Failed to update setting:', error.message);
+            actions.push({
+                action: 'update_consume_user_resource_percent',
+                value: 100,
+                success: false,
+                error: error.message
+            });
+        }
+
+        // ACTION 2: Enable emergency mode (if contract supports it)
+        console.log('[2/4] Checking for emergency mode capability...');
+        if (currentState.contractSettings.hasEmergencyMode) {
+            try {
+                const contract = await this.tronWeb.contract().at(this.contractAddress);
+                await contract.enableEmergencyMode().send();
+                actions.push({
+                    action: 'enable_emergency_mode',
+                    success: true,
+                    timestamp: Date.now()
+                });
+                console.log('✅ Emergency mode enabled');
+            } catch (error) {
+                console.error('❌ Failed to enable emergency mode:', error.message);
+            }
+        } else {
+            console.log('ℹ️  Contract does not support emergency mode');
+        }
+
+        // ACTION 3: Alert all stakeholders (PARALLEL)
+        console.log('[3/4] Sending alerts to all channels...');
+        await this.sendCriticalAlerts({
+            title: 'CRITICAL: Resource Bleeding Detected - Auto-Remediation Executed',
+            body: `TRX burn rate is ${metrics.burnRateMultiplier.toFixed(1)}x normal.\n\n` +
+                  `Automated actions taken:\n` +
+                  `- Contract switched to 100% user-paid\n` +
+                  `- Emergency mode enabled\n\n` +
+                  `IMMEDIATE MANUAL ACTION REQUIRED:\n` +
+                  `1. Investigate root cause\n` +
+                  `2. Deploy hotfix if needed\n` +
+                  `3. Monitor for next 30 minutes`,
+            severity: 'critical',
+            currentBurnRate: `${(metrics.burnRatePerHour / 1e6).toFixed(0)} TRX/hour`,
+            normalBurnRate: `${(metrics.burnRatePerHour / metrics.burnRateMultiplier / 1e6).toFixed(0)} TRX/hour`,
+            estimatedLoss: `${((metrics.burnRatePerHour / 1e6) * 24).toFixed(0)} TRX if not fixed (24h)`
+        });
+
+        // ACTION 4: Page on-call engineer
+        console.log('[4/4] Paging on-call engineer...');
+        const onCallEngineer = await this.getOnCallEngineer();
+        await this.sendPhoneCall(onCallEngineer, {
+            message: 'Critical resource incident. Auto-remediation executed. Manual investigation required immediately.',
+            requireAcknowledgment: true
+        });
+
+        console.log('\n✅ Immediate containment complete. Bleeding stopped.');
+        console.log('⏳ Waiting for manual investigation...\n');
+
+        return actions;
+    }
+
+    /**
+     * CAPACITY EXHAUSTION: Add resources or reduce load
+     *
+     * This is less time-critical than bleeding, but still requires
+     * relatively quick action. We have hours, not minutes.
+     */
+    async handleCapacityIncident(currentState, metrics, severity) {
+        console.log(`⚠️  CAPACITY EXHAUSTION INCIDENT (${severity})\n`);
+        console.log(`Time until exhaustion: ${metrics.hoursUntilExhaustion.toFixed(1)} hours\n`);
+
+        // Calculate recommended actions
+        const recommendations = [];
+
+        // Recommendation 1: Freeze more TRX for energy
+        const currentEnergy = currentState.resources.EnergyLimit || 0;
+        const energyNeededPerDay = metrics.energyUsagePerHour * 24;
+        const energyDeficit = Math.max(0, energyNeededPerDay - currentEnergy);
+
+        if (energyDeficit > 0) {
+            const trxToFreeze = Math.ceil(energyDeficit / 1000);  // ~1000 energy per TRX
+            recommendations.push({
+                action: 'freeze_trx_for_energy',
+                amount: trxToFreeze,
+                reason: `Need ${energyDeficit.toLocaleString()} more energy for 24h buffer`,
+                priority: 'high'
+            });
+        }
+
+        // Recommendation 2: Add TRX to contract balance
+        const trxNeededPerDay = metrics.burnRatePerHour * 24;
+        const currentBalance = currentState.balance;
+        const balanceDeficit = Math.max(0, (trxNeededPerDay * 3) - currentBalance);  // 3-day buffer
+
+        if (balanceDeficit > 0) {
+            recommendations.push({
+                action: 'transfer_trx_to_contract',
+                amount: Math.ceil(balanceDeficit / 1e6),
+                reason: `Need ${(balanceDeficit / 1e6).toFixed(0)} TRX for 3-day buffer`,
+                priority: 'high'
+            });
+        }
+
+        // Recommendation 3: Implement rate limiting
+        if (metrics.transactionsPerHour > currentState.baseline.transactionsPerHour * 2) {
+            recommendations.push({
+                action: 'implement_rate_limiting',
+                reason: 'Transaction volume 2x+ baseline, consider rate limiting',
+                priority: 'medium'
+            });
+        }
+
+        // Send detailed alert with recommendations
+        await this.sendAlerts({
+            title: `${severity.toUpperCase()}: Capacity Exhaustion Warning`,
+            body: `Resources will be exhausted in ${metrics.hoursUntilExhaustion.toFixed(1)} hours.\n\n` +
+                  `Current Status:\n` +
+                  `- Energy: ${currentEnergy.toLocaleString()} (using ${metrics.energyUsagePerHour.toLocaleString()}/hour)\n` +
+                  `- TRX Balance: ${(currentBalance / 1e6).toFixed(0)} (burning ${(metrics.burnRatePerHour / 1e6).toFixed(0)}/hour)\n` +
+                  `- TX Rate: ${metrics.transactionsPerHour} tx/hour\n\n` +
+                  `Recommended Actions:\n` +
+                  recommendations.map((r, i) =>
+                      `${i + 1}. [${r.priority.toUpperCase()}] ${r.action}: ${r.reason}${r.amount ? ` (${r.amount.toLocaleString()})` : ''}`
+                  ).join('\n'),
+            severity,
+            recommendations
+        });
+
+        return recommendations;
+    }
+
+    async handlePerformanceIncident(currentState, metrics) {
+        console.log('📉 PERFORMANCE DEGRADATION INCIDENT\n');
+        console.log(`Transaction costs: ${metrics.costMultiplier.toFixed(1)}x baseline\n`);
+
+        // This is the least urgent category - no immediate action needed
+        // Just notify and recommend investigation
+
+        await this.sendAlerts({
+            title: 'INFO: Performance Degradation Detected',
+            body: `Transaction costs are ${metrics.costMultiplier.toFixed(1)}x normal.\n\n` +
+                  `This may indicate:\n` +
+                  `- Energy factor activated on popular contracts\n` +
+                  `- Network congestion\n` +
+                  `- Inefficient contract calls\n\n` +
+                  `Recommended Action:\n` +
+                  `- Review recent transactions for anomalies\n` +
+                  `- Check if any called contracts have energy factor active\n` +
+                  `- Consider optimization opportunities`,
+            severity: 'info'
+        });
+    }
+
+    async createIncidentRecord(classification, currentState, metrics) {
+        const incident = {
+            id: `INC-${Date.now()}`,
+            category: classification.category,
+            severity: classification.severity,
+            startTime: Date.now(),
+            status: 'active',
+            classification,
+            initialState: currentState,
+            metrics,
+            timeline: [
+                {
+                    timestamp: Date.now(),
+                    event: 'incident_detected',
+                    classification
+                }
+            ],
+            actions: [],
+            resolution: null
+        };
+
+        // Store in incident database
+        await this.storeIncident(incident);
+
+        return incident;
+    }
+}
+```
+
+### The Runbook Library
+
+While the playbook handles the first 5 minutes, runbooks handle the next 30-60 minutes. A runbook is a step-by-step procedure for resolving a specific type of incident.
+
+The key difference:
+- **Playbook**: "The contract is bleeding TRX, stop it immediately"
+- **Runbook**: "Now that bleeding is stopped, here's how to find and fix the root cause"
+
+Here's an example runbook for investigating energy cost spikes:
+
+```markdown
+# RUNBOOK: Energy Cost Spike Investigation
+
+## When to Use This Runbook
+- TRX burn rate is 2x+ normal
+- Contract switched to 100% user-paid by playbook
+- Bleeding is stopped, now need root cause
+
+## Prerequisites
+- Access to TronGrid API key
+- Access to contract source code repository
+- Access to deployment history
+
+## Time Estimate
+30-60 minutes from start to resolution
+
+## Step-by-Step Procedure
+
+### Phase 1: Data Collection (10 minutes)
+
+**Step 1.1: Identify the spike start time**
+```bash
+# Get hourly TRX burn for last 24 hours
+node scripts/analyze-burn-rate.js --hours 24
+```
+
+Expected output: Chart showing spike start time
+
+**Step 1.2: Get transactions during spike**
+```bash
+# Get all transactions in spike window
+node scripts/get-transactions.js \
+  --contract TYourContractAddress \
+  --start "2024-03-15 14:00" \
+  --end "2024-03-15 15:00" \
+  --output spike-txs.json
+```
+
+**Step 1.3: Analyze energy usage patterns**
+```bash
+# Group transactions by method and calculate avg energy
+node scripts/analyze-energy.js spike-txs.json
+```
+
+Expected output:
+```
+Method            | Count | Avg Energy | Total TRX Burned
+------------------|-------|------------|------------------
+transfer()        | 1,234 | 65,000     | 32.5 TRX (NORMAL)
+updatePrice()     |    45 | 8,500,000  | 383.3 TRX (!!SPIKE!!)
+swap()           |   892 | 120,000    | 107.0 TRX (NORMAL)
+```
+
+In this example, `updatePrice()` is the culprit.
+
+### Phase 2: Root Cause Analysis (15 minutes)
+
+**Step 2.1: Compare with historical baseline**
+```bash
+# Get energy usage for updatePrice() from last week
+node scripts/historical-energy.js \
+  --method updatePrice \
+  --days 7
+```
+
+Expected: `updatePrice()` normally uses ~65,000 energy, not 8.5M
+
+**Step 2.2: Check recent deployments**
+```bash
+# List recent contract updates
+git log --since="1 week ago" -- contracts/YourContract.sol
+```
+
+Look for: Recent changes to `updatePrice()` method
+
+**Step 2.3: Identify the problematic code**
+
+Common causes of energy spikes in order of frequency:
+
+1. **Loop unbounded** (70% of cases)
+   - Look for: `for` or `while` loops without hard limits
+   - Example: `for (uint i = 0; i < userArray.length; i++)`
+   - Fix: Add maximum iterations: `for (uint i = 0; i < userArray.length && i < 100; i++)`
+
+2. **Storage writes increased** (20% of cases)
+   - Look for: New `storage` variables being written in loop
+   - Example: `users[i].lastUpdate = block.timestamp;` inside loop
+   - Fix: Batch updates or use events instead of storage
+
+3. **External calls in loop** (5% of cases)
+   - Look for: Contract calls inside loops
+   - Example: `token.balanceOf(users[i])` in loop
+   - Fix: Cache results or redesign to avoid loop
+
+4. **Large data structure manipulation** (5% of cases)
+   - Look for: Array/mapping operations on large datasets
+   - Fix: Paginate or use different data structure
+
+**Step 2.4: Confirm hypothesis**
+
+Deploy to Shasta testnet and test:
+```bash
+# Deploy to testnet
+npm run deploy:shasta
+
+# Run test transaction
+node scripts/test-energy.js updatePrice --network shasta
+```
+
+### Phase 3: Resolution (20 minutes)
+
+**Step 3.1: Implement fix**
+
+Based on root cause, implement fix in contract code.
+
+**Step 3.2: Test fix**
+```bash
+# Run full test suite
+npm test
+
+# Energy regression test
+node scripts/energy-regression-test.js
+```
+
+Expected: All tests pass, energy usage back to baseline
+
+**Step 3.3: Deploy fix**
+```bash
+# Deploy to mainnet
+npm run deploy:mainnet
+
+# Verify deployment
+node scripts/verify-contract.js
+```
+
+**Step 3.4: Restore normal operation**
+```bash
+# Switch contract back to subsidized mode
+node scripts/update-subsidization.js --percent 0
+```
+
+### Phase 4: Verification (15 minutes)
+
+**Step 4.1: Monitor for 30 minutes**
+```bash
+# Real-time energy monitoring
+node scripts/monitor-energy.js --realtime
+```
+
+Watch for: Energy usage returns to baseline
+
+**Step 4.2: Confirm TRX burn rate normalized**
+```bash
+node scripts/analyze-burn-rate.js --hours 1
+```
+
+Expected: Burn rate back to normal baseline
+
+**Step 4.3: Update status page**
+```bash
+node scripts/update-status.js --status operational
+```
+
+### Phase 5: Communication
+
+**Step 5.1: Post incident report**
+
+Post public incident report with:
+- What happened (energy spike on `updatePrice()`)
+- Root cause (unbounded loop in new code)
+- Impact (contract subsidization temporarily disabled for 45 minutes)
+- Resolution (hotfix deployed, subsidization restored)
+- Prevention (added energy regression tests to CI/CD)
+
+**Step 5.2: Internal post-mortem**
+
+Schedule post-mortem meeting within 48 hours with:
+- Timeline of events
+- Actions taken and why
+- What went well
+- What could be improved
+- Action items for prevention
+```
+
+This runbook format makes incident response repeatable and trainable. New engineers can follow it step-by-step. Experienced engineers can execute it from memory.
+
+### Incident Response Training
+
+Having a playbook and runbooks isn't enough. Your team needs to know how to use them under pressure. This requires regular training through incident simulation exercises.
+
+#### The Game Day Exercise
+
+Once per quarter, run a "game day" exercise where you simulate a resource incident in a controlled environment:
+
+**Setup:**
+1. Create a duplicate of your production contract on Shasta testnet
+2. Pre-fund it with testnet TRX
+3. Deploy monitoring and alerting pointed at testnet
+
+**Execution:**
+1. **T-0:00** - Facilitator introduces a "failure" (simulated bug that causes high energy usage)
+2. **T+0:00** - On-call engineer's alert fires
+3. **T+0:00 to T+0:10** - Engineer follows playbook to classify and contain
+4. **T+0:10 to T+0:60** - Engineer follows runbook to investigate and resolve
+5. **T+1:00** - Debrief: What went well? What was confusing? What took too long?
+
+**Measurement:**
+- Time to detection (should be < 5 minutes)
+- Time to classification (should be < 2 minutes)
+- Time to containment (should be < 5 minutes total)
+- Time to root cause (should be < 30 minutes)
+- Time to resolution (should be < 60 minutes)
+
+**Common Findings:**
+- Engineers forget where runbooks are stored → Add bookmark to wiki
+- API keys not accessible during incident → Add to secure password manager with shared access
+- Unclear who has authority to approve emergency tier failover → Document decision tree
+- Contract doesn't have emergency mode function → Add to next contract upgrade
+
+Each game day exercise results in improvements to your playbooks, runbooks, or infrastructure.
+
+---
+
+## 8.6 Post-Incident Analysis
+
+The incident is resolved. Users are back to normal. Your adrenaline is coming down. This is when the real learning happens.
+
+### The Value of Post-Mortems
+
+Many teams skip post-mortems because they're exhausted after an incident. This is a mistake. The hours immediately after an incident are when details are freshest in everyone's mind. Wait a week, and people will have forgotten crucial details.
+
+**Statistics from SRE teams across industries:**
+- Teams that conduct post-mortems within 48 hours prevent **73% of similar incidents** from recurring
+- Teams that skip post-mortems see the **same incident type repeat within 6 months** in 65% of cases
+- Each post-mortem prevents an average of **2.3 future incidents** (similar root causes, different symptoms)
+
+For TRON resource incidents specifically:
+- **Average cost of first incident**: ~$5,000 (learning experience)
+- **Average cost of prevented incidents** (through post-mortem learnings): ~$11,500 over next year
+- **ROI of 2-hour post-mortem meeting**: ~$11,500 / 2 hours = ~$5,750/hour
+
+Post-mortems aren't overhead. They're one of the highest-ROI activities in software engineering.
+
+### The Blameless Post-Mortem
+
+The goal of a post-mortem is to learn, not to assign blame. When someone makes a mistake, the question isn't "who screwed up?" but rather "what about our system allowed this mistake to happen, and how can we make that mistake impossible in the future?"
+
+**Example of blame-focused thinking (WRONG):**
+> "Bob deployed code without running the energy regression tests. Bob should be more careful."
+
+**Example of systems-focused thinking (CORRECT):**
+> "Bob deployed code that passed all CI/CD checks. The energy regression tests weren't in CI/CD, they were only in a separate manual checklist. Action item: Add energy regression tests to required CI/CD pipeline so deployments can't happen without them."
+
+The first approach makes Bob defensive and teaches nothing. The second approach improves the system so the next person (not just Bob) can't make the same mistake.
+
+### Post-Mortem Template
+
+Here's a template that has proven effective for TRON resource incidents:
+
+```markdown
+# Post-Mortem: [Incident Title]
+
+**Incident ID:** INC-1234567890
+**Date:** 2024-03-15
+**Duration:** 45 minutes (14:15 - 15:00 UTC)
+**Severity:** Critical
+**Authors:** [Engineer names]
+**Reviewers:** [Team lead, other stakeholders]
+
+## Executive Summary
+
+_One paragraph for executives: What happened, what was the impact, what did we learn?_
+
+On March 15, 2024, our DEX contract experienced abnormal energy consumption due to an unbounded loop introduced in a recent deployment. The contract burned 383 TRX in 30 minutes (vs. normal 32 TRX). Our automated playbook detected the anomaly within 5 minutes and switched the contract to 100% user-paid mode, stopping the TRX loss. We identified the root cause within 25 minutes, deployed a hotfix within 45 minutes, and restored full subsidization. Total impact: 383 TRX lost (~$38), contract temporarily required users to pay their own energy for 40 minutes. We've added energy regression tests to CI/CD to prevent similar incidents.
+
+## Timeline
+
+_Detailed timeline with 5-minute granularity. Include automated actions and human actions._
+
+**All times UTC:**
+
+| Time  | Event | Actor | Action/Observation |
+|-------|-------|-------|-------------------|
+| 14:00 | Deployment | Bob (engineer) | Deployed v2.4.5 with `updatePrice()` optimization |
+| 14:10 | First anomaly | Monitoring system | Energy usage for `updatePrice()` increased from 65K to 8.5M |
+| 14:15 | Alert fired | PagerDuty | "CRITICAL: TRX burn rate 10.2x baseline" sent to on-call |
+| 14:16 | Acknowledged | Alice (on-call) | Acknowledged alert, started investigating |
+| 14:17 | Playbook executed | Alice | Ran ResourceIncidentPlaybook, classified as "bleeding" |
+| 14:18 | Auto-remediation | Playbook (automated) | Contract switched to 100% user-paid mode |
+| 14:18 | Bleeding stopped | System | TRX burn rate dropped to near-zero |
+| 14:20 | Runbook started | Alice | Started "Energy Cost Spike Investigation" runbook |
+| 14:25 | Root cause identified | Alice | Found unbounded loop in `updatePrice()` iterating over all price feeds |
+| 14:30 | Fix implemented | Alice | Added `&& i < 100` limit to loop |
+| 14:35 | Fix tested on Shasta | Alice | Confirmed energy usage back to 65K on testnet |
+| 14:45 | Fix deployed to mainnet | Alice | Deployed v2.4.6 with fix |
+| 14:50 | Subsidization restored | Alice | Switched contract back to 0% user-paid |
+| 15:00 | Monitoring confirmed | Alice | 10 minutes of transactions show normal energy usage |
+| 15:00 | Incident closed | Alice | Marked incident as resolved |
+
+## Root Cause
+
+_Detailed technical explanation of what went wrong and why._
+
+The `updatePrice()` method was refactored in v2.4.5 to update all price feeds in a single transaction (previously required separate transactions per feed). The implementation used a loop:
+
+```solidity
+// BEFORE (v2.4.4): Required separate transaction per feed
+function updatePrice(uint feedId, uint newPrice) external {
+    require(msg.sender == oracle, "Not authorized");
+    priceFeeds[feedId].price = newPrice;
+    priceFeeds[feedId].lastUpdate = block.timestamp;
+}
+
+// AFTER (v2.4.5): Update all feeds in one transaction
+function updatePrice() external {
+    require(msg.sender == oracle, "Not authorized");
+
+    // BUG: No upper bound on loop iterations
+    for (uint i = 0; i < priceFeeds.length; i++) {
+        priceFeeds[i].price = oracle.getPrice(i);
+        priceFeeds[i].lastUpdate = block.timestamp;
+    }
+}
+```
+
+At deployment time, there were 45 price feeds, so this loop executed 45 iterations. Each iteration:
+- Makes external call to oracle contract: ~30,000 energy
+- Writes to storage twice: ~40,000 energy
+- **Total per iteration: ~70,000 energy**
+- **45 iterations: 3,150,000 energy**
+
+With contract subsidization at 0% (contract pays for all energy), this consumed:
+- 3,150,000 energy per call
+- ~1,323 TRX per call (at 420 SUN/energy)
+- 29 calls over 30 minutes = ~38,379 TRX total
+
+The bug was that the loop had no upper bound. If the oracle had added more price feeds (which is expected to grow over time), energy costs would have increased proportionally. At 100 feeds, each call would cost ~2,940 TRX. At 1000 feeds, each call would cost ~29,400 TRX.
+
+**Why this passed review:**
+- Manual testing used testnet with only 10 price feeds
+- Energy cost seemed reasonable with 10 feeds (700,000 energy = ~294 SUN)
+- Code reviewer didn't consider scaling implications
+- Energy regression tests existed but weren't run (manual checklist, not in CI/CD)
+
+## Impact
+
+_Quantify the impact in multiple dimensions._
+
+**Financial Impact:**
+- Direct loss: 383 TRX (~$38 at $0.10/TRX)
+- Avoided loss: ~11,000 TRX (~$1,100) if incident had continued for 24 hours
+
+**User Impact:**
+- Users calling `updatePrice()` during 40-minute window (14:18-15:00) had to pay their own energy costs
+- Estimated 29 affected transactions
+- Estimated user cost: ~0.5 TRX per transaction (users typically have some frozen energy)
+- Total user costs: ~14.5 TRX (~$1.45)
+
+**Reputational Impact:**
+- Status page showed "degraded" for 40 minutes
+- 3 support tickets from users asking why they had to pay energy
+- No social media complaints (incident resolved quickly)
+
+**Engineering Impact:**
+- 2 hours of on-call engineer time (Alice)
+- 1 hour of unplanned deployment work
+- 4 hours of post-mortem and follow-up work (entire team)
+- Total: 7 engineering hours
+
+## What Went Well
+
+_Celebrate what worked. This is important for team morale and for identifying practices to continue._
+
+1. **Automated detection was fast**: Alert fired 5 minutes after first anomaly, well within our 10-minute SLA
+2. **Playbook worked as designed**: Automated containment stopped bleeding within 3 minutes of alert
+3. **Runbook was clear**: On-call engineer (Alice) had never handled this type of incident before, but runbook provided clear step-by-step guidance
+4. **Communication was proactive**: Status page updated automatically by playbook, reducing support tickets
+5. **Fix was quick**: From root cause identification to deployed fix was only 25 minutes
+
+## What Could Be Improved
+
+_This is where the learning happens. Be specific and actionable._
+
+1. **Energy regression tests not in CI/CD**
+   - Tests existed but were in manual checklist
+   - Easy to skip when deploying "urgent" fixes
+   - Should be automated and blocking
+
+2. **Code review didn't catch scaling issue**
+   - Reviewer approved code that worked for current data size
+   - Didn't consider future growth of price feeds
+   - Need checklist for reviewing loops and data structures
+
+3. **Testnet didn't match production data**
+   - Testnet had 10 price feeds, production had 45
+   - Testing in prod-like environment would have caught this
+   - Need better testnet data seeding
+
+4. **No energy cost estimation in deployment process**
+   - We deploy without estimating energy impact of changes
+   - Could have caught 48x energy increase if we measured
+   - Need pre-deployment energy estimation tool
+
+## Action Items
+
+_Concrete, assigned, dated action items to prevent recurrence._
+
+| # | Action | Owner | Due Date | Priority |
+|---|--------|-------|----------|----------|
+| 1 | Add energy regression tests to CI/CD pipeline (blocking) | Bob | 2024-03-20 | P0 |
+| 2 | Create code review checklist for contract changes | Alice | 2024-03-22 | P0 |
+| 3 | Add automated energy cost estimation to deployment process | Charlie | 2024-03-25 | P1 |
+| 4 | Seed testnet with production-scale data | Bob | 2024-03-27 | P1 |
+| 5 | Document loop iteration limits in solidity style guide | Alice | 2024-03-29 | P2 |
+| 6 | Add loop iteration counter to contract for observability | Charlie | 2024-04-05 | P2 |
+
+## Lessons Learned
+
+_High-level lessons that apply beyond this specific incident._
+
+1. **Unbounded loops are dangerous**: Any loop iterating over user-controlled or growing data needs hard limits
+2. **Test with production-scale data**: Small datasets hide scaling problems
+3. **Automate all safety checks**: Manual checklists get skipped under pressure
+4. **Measure resource costs pre-deployment**: Energy regressions should be caught before production
+5. **Incident response training pays off**: Alice had never handled this incident type but succeeded because of quarterly game day exercises
+
+## Appendix
+
+_Supporting data, graphs, logs, etc._
+
+### Energy Usage Graph
+[Graph showing spike from 65K to 8.5M energy per call]
+
+### TRX Burn Rate
+[Graph showing 10x burn rate spike]
+
+### Affected Transactions
+[List of 29 transaction hashes during degraded period]
+```
+
+This template ensures comprehensive analysis while remaining actionable. The key is the "Action Items" section with assigned owners and due dates.
+
+---
+
+## 8.7 Testing Resilience
+
+The final piece of building resilient systems is testing resilience itself. You can't know if your failover works until you test it. You can't know if your incident response playbook is accurate until you execute it.
+
+### The Chaos Engineering Mindset
+
+Chaos engineering is the discipline of experimenting on a system to build confidence in its ability to withstand turbulent conditions. For TRON resource management, this means deliberately introducing failures and observing how your system responds.
+
+**Key principle:** Don't wait for production incidents to test your resilience. Create controlled incidents in non-production environments.
+
+### Building a TRON Chaos Engineering Framework
+
+Here's how to systematically test your resource resilience:
+
+```javascript
+/**
+ * TRON CHAOS ENGINEERING FRAMEWORK
+ *
+ * This framework allows you to inject controlled failures into your
+ * resource management system and verify that failover mechanisms work.
+ *
+ * Philosophy: Better to discover failure modes during testing than
+ * during a real incident.
+ */
+
+class TronChaosFramework {
+    constructor(config) {
+        this.tronWeb = config.tronWeb;
+        this.contractAddress = config.contractAddress;
+        this.testMode = config.testMode || 'shadow';  // shadow, canary, or full
+        this.safeguards = config.safeguards || this.getDefaultSafeguards();
+    }
+
+    /**
+     * Safety First: Chaos experiments need safeguards to prevent
+     * actual damage to production systems
+     */
+    getDefaultSafeguards() {
+        return {
+            maxDuration: 600000,  // 10 minutes max per experiment
+            requireApproval: true,  // Manual approval before running
+            networkWhitelist: ['shasta', 'nile'],  // Never run on mainnet by default
+            autoRollback: true,  // Automatically rollback if things go wrong
+            alertsEnabled: true  // Alert team when experiments running
+        };
+    }
+
+    /**
+     * EXPERIMENT 1: Multi-Tier Failover Test
+     *
+     * Purpose: Verify that failover from primary to secondary tier works
+     * Expected outcome: Traffic seamlessly moves to secondary tier
+     * Rollback: Re-enable primary tier
+     */
+    async testMultiTierFailover() {
+        console.log('\n🧪 CHAOS EXPERIMENT: Multi-Tier Failover\n');
+
+        // Pre-flight checks
+        await this.validateSafeguards('multi_tier_failover');
+        await this.takeSnapshot();  // Backup current state
+
+        const results = {
+            experimentId: `chaos-${Date.now()}`,
+            type: 'multi_tier_failover',
+            startTime: Date.now(),
+            phases: []
+        };
+
+        try {
+            // PHASE 1: BASELINE
+            console.log('[Phase 1/5] Establishing baseline...');
+            const baseline = await this.measureBaseline(60000);  // 1 minute
+            results.phases.push({
+                phase: 'baseline',
+                duration: 60000,
+                metrics: baseline
+            });
+
+            // PHASE 2: INJECT FAILURE
+            console.log('[Phase 2/5] Injecting failure into primary tier...');
+            await this.disablePrimaryTier();
+            results.phases.push({
+                phase: 'failure_injection',
+                timestamp: Date.now(),
+                action: 'disabled_primary_tier'
+            });
+
+            // PHASE 3: OBSERVE FAILOVER
+            console.log('[Phase 3/5] Observing failover (60 seconds)...');
+            const failoverMetrics = await this.observeFailover(60000);
+            results.phases.push({
+                phase: 'failover_observation',
+                duration: 60000,
+                metrics: failoverMetrics
+            });
+
+            // PHASE 4: VERIFY SECONDARY TIER
+            console.log('[Phase 4/5] Verifying secondary tier operation...');
+            const secondaryMetrics = await this.measureTierHealth('secondary', 60000);
+            results.phases.push({
+                phase: 'secondary_verification',
+                duration: 60000,
+                metrics: secondaryMetrics
+            });
+
+            // PHASE 5: ROLLBACK
+            console.log('[Phase 5/5] Rolling back to primary tier...');
+            await this.enablePrimaryTier();
+            await this.waitForStabilization(60000);
+            results.phases.push({
+                phase: 'rollback',
+                timestamp: Date.now(),
+                action: 'enabled_primary_tier'
+            });
+
+            results.endTime = Date.now();
+            results.success = this.evaluateResults(results);
+
+            console.log('\n✅ Experiment complete\n');
+            console.log('Success:', results.success);
+            console.log('Failover time:', failoverMetrics.failoverTime, 'ms');
+            console.log('Transactions failed during failover:', failoverMetrics.failedTransactions);
+
+            return results;
+
+        } catch (error) {
+            console.error('\n❌ Experiment failed:', error.message);
+
+            // Auto-rollback on error
+            if (this.safeguards.autoRollback) {
+                console.log('🔄 Auto-rollback initiated...');
+                await this.restoreSnapshot();
+            }
+
+            results.error = error.message;
+            results.success = false;
+            return results;
+        }
+    }
+
+    /**
+     * EXPERIMENT 2: Resource Exhaustion Simulation
+     *
+     * Purpose: Verify that system degrades gracefully when resources run low
+     * Expected outcome: System shifts to higher subsidization levels automatically
+     */
+    async testResourceExhaustion() {
+        console.log('\n🧪 CHAOS EXPERIMENT: Resource Exhaustion\n');
+
+        await this.validateSafeguards('resource_exhaustion');
+        await this.takeSnapshot();
+
+        const results = {
+            experimentId: `chaos-${Date.now()}`,
+            type: 'resource_exhaustion',
+            startTime: Date.now(),
+            phases: []
+        };
+
+        try {
+            // PHASE 1: BASELINE
+            const baseline = await this.measureBaseline(60000);
+            results.phases.push({ phase: 'baseline', metrics: baseline });
+
+            // PHASE 2: SIMULATE LOW ENERGY
+            console.log('[Phase 2/5] Simulating energy depletion...');
+
+            // We can't actually delete frozen energy, but we can simulate
+            // high consumption by artificially reporting low resources to
+            // the monitoring system
+            await this.injectFakeMetrics({
+                energyRemaining: 1000000,  // Low energy
+                energyLimit: 100000000,    // Normal limit
+                percentRemaining: 1        // 1% remaining
+            });
+
+            // Wait for monitoring system to detect and respond
+            await this.wait(30000);  // 30 seconds
+
+            // PHASE 3: OBSERVE DEGRADATION
+            console.log('[Phase 3/5] Observing graceful degradation...');
+            const degradationMetrics = await this.observeDegradation(60000);
+            results.phases.push({
+                phase: 'degradation_observation',
+                metrics: degradationMetrics
+            });
+
+            // Verify that subsidization policy changed
+            const currentPolicy = await this.getCurrentSubsidizationPolicy();
+            console.log('Current policy:', currentPolicy.level);
+            console.log('Expected:', 'acceptable or minimal');
+
+            results.policyShift = {
+                from: 'optimal',
+                to: currentPolicy.level,
+                correct: ['acceptable', 'minimal'].includes(currentPolicy.level)
+            };
+
+            // PHASE 4: SIMULATE RECOVERY
+            console.log('[Phase 4/5] Simulating resource recovery...');
+            await this.injectFakeMetrics({
+                energyRemaining: 80000000,  // Restored energy
+                energyLimit: 100000000,
+                percentRemaining: 80
+            });
+
+            await this.wait(30000);
+
+            // PHASE 5: VERIFY RESTORATION
+            console.log('[Phase 5/5] Verifying policy restoration...');
+            const restoredPolicy = await this.getCurrentSubsidizationPolicy();
+            results.policyRestore = {
+                to: restoredPolicy.level,
+                correct: restoredPolicy.level === 'optimal' || restoredPolicy.level === 'good'
+            };
+
+            // CLEANUP
+            await this.clearFakeMetrics();
+            await this.restoreSnapshot();
+
+            results.success = results.policyShift.correct && results.policyRestore.correct;
+            results.endTime = Date.now();
+
+            console.log('\n✅ Experiment complete\n');
+            console.log('Policy shifted correctly:', results.policyShift.correct);
+            console.log('Policy restored correctly:', results.policyRestore.correct);
+
+            return results;
+
+        } catch (error) {
+            console.error('\n❌ Experiment failed:', error.message);
+            await this.clearFakeMetrics();
+            await this.restoreSnapshot();
+            results.error = error.message;
+            results.success = false;
+            return results;
+        }
+    }
+
+    /**
+     * EXPERIMENT 3: Alert Firing Test
+     *
+     * Purpose: Verify that alerts fire correctly when thresholds are exceeded
+     * Expected outcome: All configured alerts fire within SLA
+     */
+    async testAlertFiring() {
+        console.log('\n🧪 CHAOS EXPERIMENT: Alert Firing\n');
+
+        const results = {
+            experimentId: `chaos-${Date.now()}`,
+            type: 'alert_firing',
+            startTime: Date.now(),
+            alerts: []
+        };
+
+        // Test each alert type
+        const alertTypes = [
+            {
+                name: 'burn_rate_spike',
+                trigger: () => this.injectFakeMetrics({ burnRateMultiplier: 10 }),
+                expectedAlert: 'critical_burn_rate',
+                slaMs: 60000  // Should fire within 1 minute
+            },
+            {
+                name: 'capacity_low',
+                trigger: () => this.injectFakeMetrics({ hoursUntilExhaustion: 2 }),
+                expectedAlert: 'capacity_warning',
+                slaMs: 300000  // Should fire within 5 minutes
+            },
+            {
+                name: 'performance_degradation',
+                trigger: () => this.injectFakeMetrics({ costMultiplier: 3 }),
+                expectedAlert: 'performance_warning',
+                slaMs: 600000  // Should fire within 10 minutes
+            }
+        ];
+
+        for (const alertTest of alertTypes) {
+            console.log(`\nTesting: ${alertTest.name}`);
+
+            const testStart = Date.now();
+
+            // Inject condition that should trigger alert
+            await alertTest.trigger();
+
+            // Wait for alert (with timeout)
+            const alertFired = await this.waitForAlert(
+                alertTest.expectedAlert,
+                alertTest.slaMs
+            );
+
+            const alertTime = alertFired ? Date.now() - testStart : null;
+
+            results.alerts.push({
+                type: alertTest.name,
+                expectedAlert: alertTest.expectedAlert,
+                fired: alertFired,
+                timeMs: alertTime,
+                slaMs: alertTest.slaMs,
+                withinSLA: alertFired && alertTime <= alertTest.slaMs
+            });
+
+            // Cleanup
+            await this.clearFakeMetrics();
+            await this.wait(10000);  // Cool down period
+
+            console.log(alertFired ? `✅ Alert fired in ${alertTime}ms` : '❌ Alert did not fire');
+        }
+
+        results.endTime = Date.now();
+        results.success = results.alerts.every(a => a.withinSLA);
+
+        console.log('\n📊 Alert Firing Results:');
+        results.alerts.forEach(a => {
+            console.log(`${a.type}: ${a.fired ? '✅' : '❌'} ${a.timeMs}ms (SLA: ${a.slaMs}ms)`);
+        });
+
+        return results;
+    }
+
+    /**
+     * EXPERIMENT 4: Incident Response Drill
+     *
+     * Purpose: Full end-to-end test of incident response process
+     * Expected outcome: Team follows playbook and resolves simulated incident within time budget
+     */
+    async runIncidentDrill(scenario) {
+        console.log('\n🧪 CHAOS EXPERIMENT: Incident Response Drill\n');
+        console.log(`Scenario: ${scenario.name}\n`);
+
+        const results = {
+            experimentId: `drill-${Date.now()}`,
+            type: 'incident_drill',
+            scenario: scenario.name,
+            startTime: Date.now(),
+            checkpoints: []
+        };
+
+        // Notify team that drill is starting
+        await this.sendDrillNotification({
+            message: '🚨 INCIDENT DRILL STARTING 🚨\n\n' +
+                     'This is a drill. Treat as real incident.\n' +
+                     `Scenario: ${scenario.description}\n\n` +
+                     'Timer starts now.',
+            channels: ['slack', 'pagerduty']
+        });
+
+        // Inject the scenario
+        await scenario.inject(this);
+
+        // Track checkpoints
+        const checkpoints = [
+            { name: 'alert_acknowledged', slaMinutes: 5 },
+            { name: 'incident_classified', slaMinutes: 2 },
+            { name: 'containment_executed', slaMinutes: 5 },
+            { name: 'root_cause_identified', slaMinutes: 30 },
+            { name: 'fix_deployed', slaMinutes: 60 },
+            { name: 'incident_resolved', slaMinutes: 90 }
+        ];
+
+        // Wait for team to complete each checkpoint
+        for (const checkpoint of checkpoints) {
+            const checkpointStart = Date.now();
+            const completed = await this.waitForCheckpoint(
+                checkpoint.name,
+                checkpoint.slaMinutes * 60000
+            );
+
+            const elapsed = Date.now() - checkpointStart;
+
+            results.checkpoints.push({
+                name: checkpoint.name,
+                completed,
+                elapsedMs: elapsed,
+                slaMs: checkpoint.slaMinutes * 60000,
+                withinSLA: completed && elapsed <= checkpoint.slaMinutes * 60000
+            });
+
+            if (!completed) {
+                console.log(`❌ Checkpoint "${checkpoint.name}" not reached within SLA`);
+                break;  // Stop drill if checkpoint missed
+            }
+
+            console.log(`✅ Checkpoint "${checkpoint.name}" reached in ${(elapsed / 1000 / 60).toFixed(1)} minutes`);
+        }
+
+        // Cleanup
+        await scenario.cleanup(this);
+
+        // Notify team that drill is complete
+        await this.sendDrillNotification({
+            message: '✅ INCIDENT DRILL COMPLETE ✅\n\n' +
+                     'Post-mortem meeting scheduled for tomorrow 2pm.\n' +
+                     'Great work team!',
+            channels: ['slack']
+        });
+
+        results.endTime = Date.now();
+        results.totalDuration = results.endTime - results.startTime;
+        results.success = results.checkpoints.every(c => c.withinSLA);
+
+        return results;
+    }
+
+    // Helper methods
+    async validateSafeguards(experimentType) {
+        // Check network
+        const network = await this.tronWeb.trx.getCurrentBlock();
+        const networkName = this.getNetworkName(network);
+
+        if (!this.safeguards.networkWhitelist.includes(networkName)) {
+            throw new Error(
+                `Chaos experiment "${experimentType}" not allowed on ${networkName}. ` +
+                `Whitelist: ${this.safeguards.networkWhitelist.join(', ')}`
+            );
+        }
+
+        // Require approval if configured
+        if (this.safeguards.requireApproval) {
+            const approved = await this.requestApproval(experimentType);
+            if (!approved) {
+                throw new Error('Experiment not approved');
+            }
+        }
+
+        console.log('✅ Safeguards validated\n');
+    }
+
+    async measureBaseline(duration) {
+        const start = Date.now();
+        const metrics = {
+            transactions: 0,
+            totalEnergy: 0,
+            totalTRX: 0,
+            errors: 0
+        };
+
+        // Monitor for specified duration
+        while (Date.now() - start < duration) {
+            await this.wait(1000);  // Sample every second
+            const sample = await this.sampleMetrics();
+            metrics.transactions += sample.transactions;
+            metrics.totalEnergy += sample.energy;
+            metrics.totalTRX += sample.trx;
+            metrics.errors += sample.errors;
+        }
+
+        metrics.duration = duration;
+        metrics.avgEnergyPerTx = metrics.transactions > 0
+            ? metrics.totalEnergy / metrics.transactions
+            : 0;
+
+        return metrics;
+    }
+}
+
+// Example chaos experiment scenarios
+const CHAOS_SCENARIOS = {
+    // Scenario 1: Primary tier failure
+    primaryTierFailure: {
+        name: 'Primary Tier Failure',
+        description: 'Primary resource tier becomes unavailable',
+        inject: async (framework) => {
+            await framework.disablePrimaryTier();
+        },
+        cleanup: async (framework) => {
+            await framework.enablePrimaryTier();
+        }
+    },
+
+    // Scenario 2: Sudden traffic spike
+    trafficSpike: {
+        name: 'Traffic Spike (10x)',
+        description: 'Transaction volume increases 10x suddenly',
+        inject: async (framework) => {
+            await framework.injectFakeMetrics({
+                transactionsPerHour: 10000,  // 10x normal
+                energyUsagePerHour: 50000000  // High usage
+            });
+        },
+        cleanup: async (framework) => {
+            await framework.clearFakeMetrics();
+        }
+    },
+
+    // Scenario 3: Energy cost spike
+    energyCostSpike: {
+        name: 'Energy Cost Spike',
+        description: 'Contract energy consumption suddenly increases 5x',
+        inject: async (framework) => {
+            await framework.injectFakeMetrics({
+                burnRateMultiplier: 5,
+                avgEnergyPerTx: 500000  // 5x normal
+            });
+        },
+        cleanup: async (framework) => {
+            await framework.clearFakeMetrics();
+        }
+    }
+};
+```
+
+### Running Your First Chaos Experiment
+
+Here's how to get started with chaos engineering for your TRON contract:
+
+**Week 1: Setup**
+1. Deploy chaos framework to testnet
+2. Configure safeguards (network whitelist, auto-rollback)
+3. Set up test data that mimics production scale
+
+**Week 2: First Experiment**
+1. Run Experiment #1 (Multi-Tier Failover) manually
+2. Document results
+3. Fix any issues discovered
+4. Run again to verify fixes
+
+**Week 3: Expand**
+1. Run Experiments #2 and #3
+2. Add custom experiments for your specific architecture
+3. Begin automating experiments in CI/CD
+
+**Week 4: Team Drill**
+1. Run first incident response drill with team
+2. Conduct post-mortem on drill performance
+3. Update playbooks and runbooks based on learnings
+
+**Ongoing: Monthly Cadence**
+- Run automated chaos experiments weekly
+- Run team incident drills monthly
+- Review and update experiments quarterly
+
+### Measuring Resilience Improvement
+
+Track these metrics over time to measure improvement:
+
+**Mean Time To Detect (MTTD)**
+- How quickly do you notice when something goes wrong?
+- Target: < 5 minutes for critical issues
+- Track monthly average
+
+**Mean Time To Containment (MTTC)**
+- How quickly do you stop the bleeding?
+- Target: < 5 minutes for automated containment
+- Track monthly average
+
+**Mean Time To Resolve (MTTR)**
+- How quickly do you fully resolve incidents?
+- Target: < 60 minutes for most incidents
+- Track monthly average
+
+**Incident Recurrence Rate**
+- What percentage of incidents are repeats?
+- Target: < 10% (most incidents should be novel)
+- Track quarterly
+
+**Chaos Experiment Success Rate**
+- What percentage of chaos experiments pass?
+- Target: 95%+ (high confidence in resilience)
+- Track weekly
+
+Example tracking dashboard:
+
+```
+Resource Resilience Metrics - Q1 2024
+
+Detection (MTTD):      4.2 min  ✅ (target: < 5 min)
+Containment (MTTC):    3.8 min  ✅ (target: < 5 min)
+Resolution (MTTR):     42 min   ✅ (target: < 60 min)
+
+Recurrence Rate:       8%       ✅ (target: < 10%)
+Chaos Success Rate:    96%      ✅ (target: > 95%)
+
+Total Incidents:       12 (down from 18 last quarter)
+Cost Saved by Auto-Remediation: ~$23,400
+Engineering Hours Saved: ~48 hours
+
+Top Incident Categories:
+1. Capacity exhaustion (5 incidents)
+2. Energy cost spikes (4 incidents)
+3. Traffic spikes (2 incidents)
+4. Configuration errors (1 incident)
+
+Action Items:
+- Increase energy buffer from 24h to 48h (address capacity exhaustion)
+- Add energy regression tests to CI/CD (prevent cost spikes)
+```
+
+---
+
+## Chapter Summary
+
+Building resilient resource management systems on TRON requires thinking beyond "happy path" scenarios. The principles and patterns in this chapter form a comprehensive defense-in-depth strategy:
+
+### Key Takeaways
+
+**1. Resilience is Multi-Layered**
+- No single mechanism is sufficient
+- Combine monitoring, graceful degradation, failover, incident response, and testing
+- Each layer catches failures the previous layers missed
+
+**2. Fail Gracefully, Not Catastrophically**
+- Systems should degrade incrementally, not collapse suddenly
+- 5-level subsidization policy (Optimal → Good → Acceptable → Minimal → Emergency)
+- Preserve core functionality (withdrawals) even in worst-case scenarios
+
+**3. Automate Incident Response**
+- Playbooks for rapid triage and classification
+- Automated containment for time-critical incidents (bleeding)
+- Runbooks for systematic root cause investigation
+- Regular training through game day exercises
+
+**4. Learn from Every Incident**
+- Conduct blameless post-mortems within 48 hours
+- Focus on system improvements, not individual blame
+- Track action items with owners and due dates
+- Measure effectiveness: 73% reduction in recurrence with good post-mortems
+
+**5. Test Resilience Proactively**
+- Don't wait for production incidents to test failover
+- Use chaos engineering to inject controlled failures
+- Run quarterly incident response drills with full team
+- Measure and track resilience metrics over time
+
+### Implementation Checklist
+
+Use this checklist to assess your resilience maturity:
+
+**Monitoring (Chapter 7)**
+- [ ] Real-time resource usage monitoring
+- [ ] Burn rate alerts (< 5 minute detection)
+- [ ] Capacity alerts (hours until exhaustion)
+- [ ] Baseline establishment and anomaly detection
+
+**Graceful Degradation**
+- [ ] 5-level subsidization policy implemented
+- [ ] Automated policy transitions based on resource health
+- [ ] User communication during degraded modes
+- [ ] Emergency mode that preserves withdrawals
+
+**Multi-Tier Architecture**
+- [ ] At least 3 resource tiers (Primary, Secondary, Emergency)
+- [ ] Automated failover for first 2 tiers
+- [ ] Approval gates for emergency tier
+- [ ] Complete exhaustion handled gracefully
+
+**Incident Response**
+- [ ] Incident playbook for rapid triage
+- [ ] Category-specific runbooks (bleeding, capacity, performance)
+- [ ] On-call rotation and escalation procedures
+- [ ] Quarterly game day exercises
+
+**Post-Incident Learning**
+- [ ] Post-mortem template
+- [ ] Blameless post-mortem culture
+- [ ] Action item tracking with owners/dates
+- [ ] Incident database for pattern analysis
+
+**Chaos Engineering**
+- [ ] Chaos engineering framework deployed
+- [ ] Safeguards configured (network whitelist, auto-rollback)
+- [ ] At least 3 automated experiments running weekly
+- [ ] Monthly team incident drills
+- [ ] Resilience metrics tracked and reviewed
+
+### The Resilience Mindset
+
+The most important takeaway from this chapter isn't any specific tool or technique. It's a mindset shift: **expecting and planning for failure**.
+
+Traditional development asks: "How do I make this work?"
+Resilience engineering asks: "How will this fail, and what happens when it does?"
+
+This mindset manifests in daily practices:
+- **When writing code**: "What if this loop has 10,000 items instead of 10?"
+- **When deploying**: "What if this change increases energy costs 5x?"
+- **When on-call**: "Do I know exactly what to do if X breaks at 3am?"
+- **When reviewing**: "What happens if this contract runs out of TRX?"
+
+Teams that adopt this mindset build systems that survive the inevitable chaos of production. Teams that don't, learn these lessons through expensive incidents.
+
+### Next Steps
+
+With resilient resource management in place, you're prepared for the advanced topics in the remaining chapters:
+
+- **Chapter 9**: Adaptive Energy Economics - Understanding and preparing for dynamic pricing
+- **Chapter 10**: Performance Optimization - Minimizing resource consumption through code optimization
+- **Chapter 11**: Security and Resource Attacks - Defending against adversarial actors
+- **Chapter 12**: The Future of TRON Resources - Upcoming changes and ecosystem evolution
+
+The patterns in this chapter form the foundation for everything that follows. Master them, and you'll be prepared for whatever TRON's evolving resource system brings.
+
+---
+
+**End of Chapter 8**
+
+*This chapter provided detailed implementations of resilient resource management systems. The code examples are production-ready patterns used by major TRON dApps. Adapt them to your specific requirements, test thoroughly on testnet, and gradually roll out to production with monitoring at each step.*

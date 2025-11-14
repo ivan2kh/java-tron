@@ -1166,112 +1166,61 @@ Now that you understand the cost model, let's explore practical techniques for m
 
 ### 5.6.1 Energy Profiler
 
-Build a tool to analyze transaction receipts:
+Analyze transaction receipts to break down energy costs:
 
 ```javascript
-class TronEnergyProfiler {
-    constructor(tronWeb) {
-        this.tronWeb = tronWeb;
-    }
-
-    async analyzeTransaction(txid) {
-        const txInfo = await this.tronWeb.trx.getTransactionInfo(txid);
-        const tx = await this.tronWeb.trx.getTransaction(txid);
-
-        if (!txInfo.receipt || !txInfo.receipt.energy_usage_total) {
-            throw new Error('Transaction has no energy usage data');
-        }
-
-        const receipt = txInfo.receipt;
-
-        const analysis = {
-            txid: txid,
-            success: receipt.result === 'SUCCESS',
-            energyUsageTotal: receipt.energy_usage_total || 0,
-            energyPenaltyTotal: receipt.energy_penalty_total || 0,
-            originEnergyUsage: receipt.origin_energy_usage || 0,
-            energyUsage: receipt.energy_usage || 0,
-            energyFee: receipt.energy_fee || 0,
-            netFee: receipt.net_fee || 0,
-        };
-
-        // Calculate derived metrics
-        analysis.baseEnergy = analysis.energyUsageTotal - analysis.energyPenaltyTotal;
-        analysis.creatorPaid = analysis.originEnergyUsage;
-        analysis.callerFrozen = analysis.energyUsage;
-        analysis.callerBurned = (analysis.energyFee / 420);  // Assuming 420 sun/energy
-        analysis.callerTotal = analysis.callerFrozen + analysis.callerBurned;
-
-        // Calculate multiplier from penalty
-        if (analysis.baseEnergy > 0) {
-            analysis.penaltyMultiplier = analysis.energyUsageTotal / analysis.baseEnergy;
-            analysis.energyFactor = Math.round((analysis.penaltyMultiplier - 1) * 10000);
-        } else {
-            analysis.penaltyMultiplier = 1.0;
-            analysis.energyFactor = 0;
-        }
-
-        // Cost breakdown
-        analysis.costTRX = analysis.energyFee / 1e6;
-        analysis.costUSD = analysis.costTRX * (await this.getTRXPrice());
-
-        return analysis;
-    }
-
-    async getTRXPrice() {
-        // In production, fetch from price oracle
-        // For now, use placeholder
-        return 0.10;  // $0.10 per TRX
-    }
-
-    printAnalysis(analysis) {
-        console.log('\n=== Energy Analysis ===');
-        console.log(`Transaction: ${analysis.txid}`);
-        console.log(`Status: ${analysis.success ? '✓ SUCCESS' : '✗ FAILED'}`);
-        console.log('');
-        console.log('Energy Breakdown:');
-        console.log(`  Base energy: ${analysis.baseEnergy.toLocaleString()}`);
-        console.log(`  Penalty: ${analysis.energyPenaltyTotal.toLocaleString()} ` +
-                    `(${((analysis.penaltyMultiplier - 1) * 100).toFixed(1)}%)`);
-        console.log(`  Total: ${analysis.energyUsageTotal.toLocaleString()}`);
-        console.log(`  Energy factor: ${analysis.energyFactor.toLocaleString()} ` +
-                    `(${analysis.penaltyMultiplier.toFixed(2)}x)`);
-        console.log('');
-        console.log('Payment Distribution:');
-        console.log(`  Creator paid: ${analysis.creatorPaid.toLocaleString()} (from frozen)`);
-        console.log(`  Caller frozen: ${analysis.callerFrozen.toLocaleString()}`);
-        console.log(`  Caller burned: ${analysis.callerBurned.toLocaleString()}`);
-        console.log(`  Caller total: ${analysis.callerTotal.toLocaleString()}`);
-        console.log('');
-        console.log('Cost:');
-        console.log(`  TRX: ${analysis.costTRX.toFixed(4)} TRX`);
-        console.log(`  USD: $${analysis.costUSD.toFixed(4)}`);
-        console.log(`  Bandwidth fee: ${(analysis.netFee / 1e6).toFixed(4)} TRX`);
-
-        // Recommendations
-        console.log('');
-        console.log('Recommendations:');
-        if (analysis.energyFactor > 5000) {
-            console.log('  ⚠️  High energy penalty! Consider optimizing contract or reducing usage.');
-        }
-        if (analysis.callerBurned > analysis.callerFrozen) {
-            console.log('  💡 Freeze more TRX for energy to avoid burning.');
-        }
-        if (analysis.creatorPaid === 0 && analysis.callerBurned > 0) {
-            console.log('  💡 Contract creator could subsidize via consume_user_resource_percent.');
-        }
-    }
-}
-
-// Usage
-const tronWeb = new TronWeb({
-    fullHost: 'https://api.trongrid.io'
-});
+const { TronEnergyProfiler } = require('../code-examples/energy-profiler');
 
 const profiler = new TronEnergyProfiler(tronWeb);
-const analysis = await profiler.analyzeTransaction('your_tx_id_here');
+const analysis = await profiler.analyzeTransaction('tx_id_here');
+
+// Returns detailed breakdown:
+// - Base energy vs. penalty
+// - Creator vs. caller distribution
+// - Energy factor detection
+// - Cost in TRX and USD
+// - Optimization recommendations
+
 profiler.printAnalysis(analysis);
 ```
+
+**Output example**:
+```
+=== Energy Analysis ===
+Transaction: abc123...
+Status: ✓ SUCCESS
+
+Energy Breakdown:
+  Base energy: 50,000
+  Penalty: 50,000 (100.0%)
+  Total: 100,000
+  Energy factor: 10000 (2.00x)
+
+Payment Distribution:
+  Creator paid: 30,000 (from frozen)
+  Caller frozen: 20,000
+  Caller burned: 50,000
+  Caller total: 70,000
+
+Cost:
+  TRX: 21.0000 TRX
+  USD: $2.1000
+
+Recommendations:
+  ⚠️  High energy penalty! Consider optimizing contract or reducing usage.
+  💡 Freeze more TRX for energy to avoid burning.
+```
+
+**Batch analysis**:
+```javascript
+// Analyze multiple transactions
+const txids = ['tx1', 'tx2', 'tx3'];
+const result = await profiler.analyzeBatch(txids);
+profiler.printBatchStats(result);
+// Shows: total/avg energy, costs, top 5 expensive
+```
+
+> **Full implementation**: See [`code-examples/energy-profiler.js`](../code-examples/energy-profiler.js) for complete source with batch analysis and extended statistics.
 
 ### 5.6.2 Contract Optimization Patterns
 

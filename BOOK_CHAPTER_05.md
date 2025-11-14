@@ -517,46 +517,27 @@ A contract with `energy_factor = 10,000` (100% penalty) performing:
 
 ### 5.2.5 Checking Your Contract's Energy Factor
 
-You can query a contract's current state using `wallet/getcontractinfo`:
+Query a contract's energy factor:
 
 ```javascript
-const tronWeb = new TronWeb({
-    fullHost: 'https://api.trongrid.io'
-});
+const info = await tronWeb.trx.getContract(contractAddress);
+const state = info.contract_state || {};
 
-async function checkEnergyFactor(contractAddress) {
-    try {
-        const info = await tronWeb.trx.getContract(contractAddress);
+const factor = state.energy_factor || 0;
+const multiplier = (10000 + factor) / 10000;
 
-        // ContractState may not be present if never triggered
-        if (info.contract_state) {
-            const factor = info.contract_state.energy_factor || 0;
-            const usage = info.contract_state.energy_usage || 0;
-            const cycle = info.contract_state.update_cycle || 0;
-
-            const multiplier = (10000 + factor) / 10000;
-
-            console.log(`Contract: ${contractAddress}`);
-            console.log(`Energy Factor: ${factor} (${multiplier.toFixed(2)}x multiplier)`);
-            console.log(`Current Cycle Usage: ${usage.toLocaleString()} energy`);
-            console.log(`Last Update Cycle: ${cycle}`);
-
-            if (factor > 0) {
-                console.log(`⚠️  WARNING: Operations cost ${((multiplier - 1) * 100).toFixed(0)}% more`);
-            }
-        } else {
-            console.log('No contract state (energy_factor = 0)');
-        }
-    } catch (err) {
-        console.error('Error fetching contract:', err.message);
-    }
-}
-
-// Example: Check USDT contract
-await checkEnergyFactor('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t');
+console.log(`Energy Factor: ${factor} (${multiplier}x cost multiplier)`);
+// If factor > 0: operations cost more than base rate
 ```
 
-**Note**: As of this writing, mainnet has the energy factor system disabled (`dynamicEnergyThreshold = 0`), so you'll likely see `energy_factor = 0` for all contracts. The system can be activated via governance proposal.
+**Example**:
+```javascript
+// Check USDT contract
+const info = await tronWeb.trx.getContract('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t');
+console.log('Factor:', info.contract_state?.energy_factor || 0);
+```
+
+**Note**: Currently disabled on mainnet (`dynamicEnergyThreshold = 0`). Can be activated via governance.
 
 ---
 
@@ -788,26 +769,9 @@ if (newPercent > 100 || newPercent < 0) {
 **Example**:
 
 ```javascript
-// Update setting via TronWeb
-const tronWeb = new TronWeb({
-    fullHost: 'https://api.trongrid.io',
-    privateKey: 'your_private_key_here'
-});
-
-async function updateConsumePercent(contractAddress, percent) {
-    const tx = await tronWeb.transactionBuilder.updateSetting(
-        contractAddress,
-        percent  // 0-100
-    );
-    const signedTx = await tronWeb.trx.sign(tx);
-    const result = await tronWeb.trx.sendRawTransaction(signedTx);
-
-    console.log(`Updated consume_user_resource_percent to ${percent}%`);
-    console.log('Transaction ID:', result.txid);
-}
-
-// Set contract to subsidize 70% of energy (user pays 30%)
-await updateConsumePercent('TYourContractAddressHere', 30);
+// User pays 30%, contract pays 70%
+const tx = await tronWeb.transactionBuilder.updateSetting(contractAddress, 30);
+await tronWeb.trx.sign(tx).then(tronWeb.trx.sendRawTransaction);
 ```
 
 **Use cases**:
@@ -842,20 +806,9 @@ if (newOriginEnergyLimit <= 0) {
 **Example**:
 
 ```javascript
-async function updateOriginEnergyLimit(contractAddress, limit) {
-    const tx = await tronWeb.transactionBuilder.updateEnergyLimit(
-        contractAddress,
-        limit  // Energy units (e.g., 100000)
-    );
-    const signedTx = await tronWeb.trx.sign(tx);
-    const result = await tronWeb.trx.sendRawTransaction(signedTx);
-
-    console.log(`Updated origin_energy_limit to ${limit.toLocaleString()} energy`);
-    console.log('Transaction ID:', result.txid);
-}
-
-// Set maximum creator contribution to 100,000 energy per tx
-await updateOriginEnergyLimit('TYourContractAddressHere', 100000);
+// Set max creator contribution to 100,000 energy per transaction
+const tx = await tronWeb.transactionBuilder.updateEnergyLimit(contractAddress, 100000);
+await tronWeb.trx.sign(tx).then(tronWeb.trx.sendRawTransaction);
 ```
 
 **Default**: When deploying a contract, `origin_energy_limit` defaults to 10,000,000 (10 million energy).
@@ -1478,48 +1431,31 @@ function processBatch(uint256 start, uint256 count) external {
 Use TronWeb's `triggerConstantContract` to estimate costs:
 
 ```javascript
-async function estimateEnergy(contractAddress, functionSelector, parameters, callerAddress) {
-    const tronWeb = new TronWeb({
-        fullHost: 'https://api.trongrid.io'
-    });
-
-    try {
-        // Call contract without creating transaction
-        const result = await tronWeb.transactionBuilder.triggerConstantContract(
-            contractAddress,
-            functionSelector,
-            {},
-            parameters,
-            callerAddress
-        );
-
-        if (!result.result || !result.result.result) {
-            console.error('Call failed:', result);
-            return null;
-        }
-
-        const energyUsed = result.energy_used || 0;
-
-        console.log(`Estimated energy: ${energyUsed.toLocaleString()}`);
-        console.log(`Cost if burned: ${(energyUsed * 420 / 1e6).toFixed(4)} TRX`);
-
-        return energyUsed;
-    } catch (err) {
-        console.error('Estimation error:', err.message);
-        return null;
-    }
-}
-
-// Example: Estimate USDT transfer
-await estimateEnergy(
-    'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',  // USDT contract
+// Estimate energy without executing transaction
+const result = await tronWeb.transactionBuilder.triggerConstantContract(
+    contractAddress,
     'transfer(address,uint256)',
-    [
-        { type: 'address', value: 'TRecipientAddressHere' },
-        { type: 'uint256', value: 1000000 }  // 1 USDT (6 decimals)
-    ],
-    'TYourAddressHere'
+    {},
+    [{ type: 'address', value: recipient }, { type: 'uint256', value: amount }],
+    callerAddress
 );
+
+const energyUsed = result.energy_used || 0;
+const costInTRX = (energyUsed * 420) / 1e6;
+
+console.log(`Energy: ${energyUsed}, Cost: ${costInTRX} TRX`);
+```
+
+**Example - USDT transfer**:
+```javascript
+const result = await tronWeb.transactionBuilder.triggerConstantContract(
+    'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',  // USDT
+    'transfer(address,uint256)',
+    {},
+    [{ type: 'address', value: 'TRec...' }, { type: 'uint256', value: 1000000 }],
+    'TYour...'
+);
+// result.energy_used ~= 14500 energy
 ```
 
 **Important**: `triggerConstantContract` provides estimates, but actual cost may vary due to:

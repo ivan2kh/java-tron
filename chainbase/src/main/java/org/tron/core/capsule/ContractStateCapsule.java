@@ -149,6 +149,7 @@ public class ContractStateCapsule implements ProtoCapsule<ContractState> {
   public void reset(long latestCycle) {
     this.contractState = ContractState.newBuilder()
         .setUpdateCycle(latestCycle)
+        .setEnergyFactor(35000L)  // Set initial factor to 35000 for 4.5x energy cost
         .build();
   }
 }
